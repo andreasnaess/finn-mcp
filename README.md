@@ -42,17 +42,21 @@ On any machine, from a fresh clone:
 
 ```sh
 git clone <repo-url> finn-mcp && cd finn-mcp
-npm install
-npm run build
-npm run register        # registers the jobs server with Claude Code
+npm install             # installs deps and builds, via the prepare script
+npm run register        # registers each vertical's server with Claude Code
 ```
 
 `npm run register` resolves the absolute path from wherever you cloned to, so
 there is nothing machine-specific to edit. It is safe to re-run — it replaces
-any existing `finn-jobs` registration, which is also how you point Claude Code
-at a clone that has moved.
+any existing registration, which is also how you point Claude Code at a clone
+that has moved. Pass a vertical to register just that one:
 
-Under the hood that is just:
+```sh
+npm run register            # every vertical
+npm run register -- jobs    # only finn-jobs
+```
+
+Under the hood each registration is just:
 
 ```sh
 claude mcp add finn-jobs -s user -- node "$PWD/dist/jobs/index.js"
@@ -62,10 +66,31 @@ claude mcp add finn-jobs -s user -- node "$PWD/dist/jobs/index.js"
 want for searching FINN from anywhere. It must be an absolute path: a
 user-scoped server is launched from whatever directory you happen to be in.
 
+For clients configured by hand rather than through the `claude` CLI, print the
+equivalent config instead:
+
+```sh
+npm run register -- --print
+```
+
 Each vertical is registered separately, named for the vertical it covers
 (`finn-jobs`, `finn-torget`, …), so their tools stay distinguishable when
 several are registered at once. Adding a second vertical never disturbs the
-first.
+first: `scripts/register.mjs` derives the list from the `bin` map in
+`package.json`, so a new vertical needs a `bin` entry and nothing more.
+
+To check that a server actually starts and to see the tools it exposes:
+
+```sh
+npm run smoke
+```
+
+```
+✓ finn-jobs: finn-jobs-mcp@0.1.0 — 3 tools
+    search_jobs
+    get_job
+    list_filter_options
+```
 
 Or add it to `~/.claude.json` by hand — substituting your own clone path:
 

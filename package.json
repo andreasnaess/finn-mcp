@@ -7,14 +7,18 @@
   "bin": {
     "finn-jobs-mcp": "dist/jobs/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc",
     "watch": "tsc --watch",
-    "start": "node dist/jobs/index.js",
-    "register": "claude mcp remove finn-jobs -s user > /dev/null 2>&1; claude mcp add finn-jobs -s user -- node \"$PWD/dist/jobs/index.js\""
+    "register": "node scripts/register.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
