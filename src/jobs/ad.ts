@@ -8,7 +8,8 @@
  * and skills, the employer fact list — are read from the rendered markup.
  */
 
-import { fetchAdHtml, SITE } from "./finn.js";
+import { fetchHtml, SITE } from "../core/http.js";
+import { adUrl } from "./config.js";
 
 export interface JobAd {
   id: string;
@@ -190,7 +191,7 @@ export function parseAd(id: string, html: string): JobAd {
 
   return {
     id,
-    url: `${SITE}/job/ad/${id}`,
+    url: adUrl(id),
     heading: parseHeading(html),
     jobTitle: ld?.title,
     company: ld?.hiringOrganization?.name,
@@ -216,7 +217,7 @@ export function parseAd(id: string, html: string): JobAd {
 }
 
 export async function getAd(id: string): Promise<JobAd> {
-  return parseAd(id, await fetchAdHtml(id));
+  return parseAd(id, await fetchHtml(adUrl(id)));
 }
 
 /** Accept an ad id, a finnkode, or a full finn.no URL. */

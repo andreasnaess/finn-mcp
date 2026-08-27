@@ -1,13 +1,32 @@
-/** Search parameter assembly and result rendering. */
+/** Search parameter assembly and result rendering for FINN Jobb. */
 
-import { search, webSearchUrl, type JobDoc, type SearchResponse } from "./finn.js";
-import {
-  labelFor,
-  resolveOption,
-  resolveWithAliases,
-  type FilterName,
-  type ResolvedOption,
-} from "./taxonomy.js";
+import { search, webSearchUrl, type SearchResponse } from "../core/http.js";
+import { type ResolvedOption } from "../core/taxonomy.js";
+import { JOBS, taxonomy, type FilterName } from "./config.js";
+
+/** A single result row from the jobs search API. */
+export interface JobDoc {
+  id: string;
+  ad_id: number;
+  heading: string;
+  job_title?: string;
+  company_name?: string;
+  location?: string;
+  locations?: string[];
+  work_locations?: string[][];
+  canonical_url: string;
+  published?: number;
+  deadline?: number;
+  timestamp?: number;
+  no_of_positions?: number;
+  coordinates?: { lat: number; lon: number };
+  flags?: string[];
+  labels?: { id: string; text: string; type?: string }[];
+  extras?: { id: string; label: string; values: string[] }[];
+  logo?: { url?: string };
+}
+
+export type JobSearchResponse = SearchResponse<JobDoc>;
 
 export const SORTS = {
   relevance: "RELEVANCE",
@@ -56,7 +75,11 @@ export async function buildQuery(args: SearchArgs): Promise<BuiltQuery> {
   ): Promise<void> => {
     if (!values?.length) return;
     const options = await Promise.all(
-      values.map((v) => (withAliases ? resolveWithAliases(filter, v) : resolveOption(filter, v))),
+      values.map((v) =>
+        withAliases
+          ? taxonomy.resolveWithAliases(filter, v)
+          : taxonomy.resolveOption(filter, v),
+      ),
     );
     for (const option of options) params.append(filter, option.value);
     resolved.push({ filter, options });
@@ -92,11 +115,11 @@ export async function buildQuery(args: SearchArgs): Promise<BuiltQuery> {
 }
 
 export async function runSearch(args: SearchArgs): Promise<{
-  response: SearchResponse;
+  response: JobSearchResponse;
   params: URLSearchParams;
 }> {
   const { params } = await buildQuery(args);
-  return { response: await search(params), params };
+  return { response: await search<JobDoc>(JOBS, params), params };
 }
 
 const fmtDate = (ms?: number): string | undefined =>
@@ -119,7 +142,7 @@ async function describeExtras(doc: JobDoc): Promise<string[]> {
   for (const extra of doc.extras ?? []) {
     const filter = extra.id as FilterName;
     if (filter !== "work_experience" && filter !== "education") continue;
-    const names = await Promise.all(extra.values.map((v) => labelFor(filter, v)));
+    const names = await Promise.all(extra.values.map((v) => taxonomy.labelFor(filter, v)));
     const shown = names.filter(Boolean);
     if (shown.length) out.push(`${extra.label}: ${shown.join(", ")}`);
   }
@@ -158,7 +181,7 @@ async function renderDoc(doc: JobDoc, index: number): Promise<string> {
 }
 
 export async function renderResults(
-  response: SearchResponse,
+  response: JobSearchResponse,
   params: URLSearchParams,
 ): Promise<string> {
   const meta = response.metadata ?? {};
@@ -193,7 +216,7 @@ export async function renderResults(
     );
   }
   header.push(`Sorted by ${meta.sort ?? "RELEVANCE"}`);
-  header.push(`Open in browser: ${webSearchUrl(params)}`);
+  header.push(`Open in browser: ${webSearchUrl(JOBS, params)}`);
 
   if (!response.docs.length) {
     return (

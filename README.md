@@ -1,10 +1,34 @@
 # finn-mcp
 
-An MCP server for browsing job adverts on [finn.no](https://www.finn.no/job/search)
-(FINN Jobb, Norway's dominant job board) — built for finding software developer
-roles in a given area.
+MCP servers for browsing [finn.no](https://www.finn.no), one per FINN vertical.
+Each vertical is a separate server process with its own tools and its own filter
+taxonomy; they share this repo, a build and the HTTP layer, nothing more.
+
+| Vertical | Entry point | What it covers |
+| --- | --- | --- |
+| Jobs | `dist/jobs/index.js` | [FINN Jobb](https://www.finn.no/job/search), Norway's dominant job board — built for finding software developer roles in a given area |
+
+## Layout
+
+```
+src/
+  core/        vertical-agnostic: HTTP, and the live filter-taxonomy engine
+    http.ts      request/timeout/errors; `search(vertical, params)`
+    taxonomy.ts  `createTaxonomy(vertical, aliases)` — name→code resolution
+  jobs/        the FINN Jobb vertical
+    config.ts    endpoint, filter names, English aliases, ad URL
+    index.ts     the server: tool registration (this is the bin entry)
+    search.ts    parameter assembly and result rendering
+    ad.ts        parsing one advert page
+```
+
+A new vertical is a sibling folder of `jobs/` with its own `config.ts` and
+`index.ts`, plus a `bin` entry in `package.json`. `core/` holds only what is
+genuinely shared — no vertical-specific values live there.
 
 ## Tools
+
+These are the jobs server's tools.
 
 | Tool | What it does |
 | --- | --- |
@@ -14,29 +38,51 @@ roles in a given area.
 
 ## Setup
 
+On any machine, from a fresh clone:
+
 ```sh
+git clone <repo-url> finn-mcp && cd finn-mcp
 npm install
 npm run build
+npm run register        # registers the jobs server with Claude Code
 ```
 
-Then register it with Claude Code:
+`npm run register` resolves the absolute path from wherever you cloned to, so
+there is nothing machine-specific to edit. It is safe to re-run — it replaces
+any existing `finn-jobs` registration, which is also how you point Claude Code
+at a clone that has moved.
+
+Under the hood that is just:
 
 ```sh
-claude mcp add finn --scope user -- node /Users/andreas/projects/finn-mcp/dist/index.js
+claude mcp add finn-jobs -s user -- node "$PWD/dist/jobs/index.js"
 ```
 
-Or add it to `.mcp.json` / `~/.claude.json` by hand:
+`-s user` makes the server available in all your projects, which is what you
+want for searching FINN from anywhere. It must be an absolute path: a
+user-scoped server is launched from whatever directory you happen to be in.
+
+Each vertical is registered separately, named for the vertical it covers
+(`finn-jobs`, `finn-torget`, …), so their tools stay distinguishable when
+several are registered at once. Adding a second vertical never disturbs the
+first.
+
+Or add it to `~/.claude.json` by hand — substituting your own clone path:
 
 ```json
 {
   "mcpServers": {
-    "finn": {
+    "finn-jobs": {
       "command": "node",
-      "args": ["/Users/andreas/projects/finn-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/finn-mcp/dist/jobs/index.js"]
     }
   }
 }
 ```
+
+Note that Claude Code writes `~/.claude.json` itself, so a hand-edit made while
+a session is running can be overwritten; `claude mcp add` goes through the CLI's
+own writer and does not have that problem.
 
 ## Finding developer jobs
 
@@ -87,6 +133,11 @@ endpoint. The base URL and search key are the ones the page itself ships in its
 ```
 GET https://www.finn.no/job/job-search-page/api/unified-search/SEARCH_ID_JOB_FULLTIME?<filters>
 ```
+
+Despite its name, `SEARCH_ID_JOB_FULLTIME` is the whole jobs index rather than
+just full-time ads — `extent=Deltid` returns part-time ads through it (verified
+2026-08-27: 4132 part-time ads nationally). Other verticals have their own base
+URL and search key; those two values are all `core/` needs to talk to them.
 
 Every response carries a `filters` array containing the complete taxonomy —
 display names paired with the codes the query parameters expect. This server

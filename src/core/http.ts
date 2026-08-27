@@ -1,29 +1,39 @@
 /**
- * Low-level HTTP access to finn.no.
+ * Low-level HTTP access to finn.no, shared by every vertical.
  *
- * FINN's job search page (https://www.finn.no/job/search) is a React app that
- * talks to a public, unauthenticated JSON endpoint. The base URL and search key
- * are the ones the page itself ships in its `data-props` payload:
+ * FINN's search pages are React apps that talk to public, unauthenticated JSON
+ * endpoints. Each vertical ships its own base URL and search key in the page's
+ * `data-props` payload:
  *
  *   <script type="application/json" data-props>  (base64)
  *     { "apiUrl": "https://www.finn.no/job/job-search-page/api",
  *       "searchKey": "SEARCH_ID_JOB_FULLTIME", ... }
  *
- * and the client bundle (job-search-web/entry.client.js) builds requests as
- * `${apiUrl}/unified-search/${searchKey}?<params>`.
+ * and the client bundle builds requests as
+ * `${apiUrl}/unified-search/${searchKey}?<params>`. Those two values are the
+ * only things that differ between verticals at this layer, so they are passed
+ * in as a `Vertical` rather than hard-coded here.
  *
  * There is no documented public API contract here, so everything this module
  * depends on is re-verified at runtime where practical: filter codes are read
  * from the `filters` array the API returns rather than hard-coded.
  */
 
-export const API_BASE = "https://www.finn.no/job/job-search-page/api";
-export const SEARCH_KEY = "SEARCH_ID_JOB_FULLTIME";
 export const SITE = "https://www.finn.no";
+
+/** The per-vertical endpoint coordinates. See `jobs/config.ts` for an example. */
+export interface Vertical {
+  /** Search API base, e.g. "https://www.finn.no/job/job-search-page/api". */
+  apiBase: string;
+  /** Search key the client bundle uses, e.g. "SEARCH_ID_JOB_FULLTIME". */
+  searchKey: string;
+  /** Human-facing search page path, e.g. "/job/search". */
+  searchPath: string;
+}
 
 /** Identify the client honestly; FINN blocks obviously headless/blank agents. */
 const USER_AGENT =
-  "finn-mcp/0.1 (MCP server for finn.no job search; +https://github.com/)";
+  "finn-mcp/0.1 (MCP server for finn.no search; +https://github.com/)";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
@@ -68,28 +78,6 @@ async function request(url: string, accept: string): Promise<Response> {
   }
 }
 
-/** A single result row from the search API. */
-export interface JobDoc {
-  id: string;
-  ad_id: number;
-  heading: string;
-  job_title?: string;
-  company_name?: string;
-  location?: string;
-  locations?: string[];
-  work_locations?: string[][];
-  canonical_url: string;
-  published?: number;
-  deadline?: number;
-  timestamp?: number;
-  no_of_positions?: number;
-  coordinates?: { lat: number; lon: number };
-  flags?: string[];
-  labels?: { id: string; text: string; type?: string }[];
-  extras?: { id: string; label: string; values: string[] }[];
-  logo?: { url?: string };
-}
-
 export interface FilterItem {
   display_name: string;
   value: string | number;
@@ -103,8 +91,13 @@ export interface FilterGroup {
   filter_items?: FilterItem[];
 }
 
-export interface SearchResponse {
-  docs: JobDoc[];
+/**
+ * A search response. The `filters` and `metadata` envelope is the same across
+ * verticals; only the shape of a result row differs, so `Doc` is left to the
+ * vertical (see `JobDoc` in `jobs/search.ts`).
+ */
+export interface SearchResponse<Doc> {
+  docs: Doc[];
   filters: FilterGroup[];
   metadata: {
     params: Record<string, string[]>;
@@ -120,24 +113,25 @@ export interface SearchResponse {
   };
 }
 
-/** Call the unified-search endpoint. `params` values are passed through as-is. */
-export async function search(
+/** Call a vertical's unified-search endpoint. `params` are passed through as-is. */
+export async function search<Doc>(
+  vertical: Vertical,
   params: URLSearchParams,
-): Promise<SearchResponse> {
-  const url = `${API_BASE}/unified-search/${SEARCH_KEY}?${params.toString()}`;
+): Promise<SearchResponse<Doc>> {
+  const url = `${vertical.apiBase}/unified-search/${vertical.searchKey}?${params.toString()}`;
   const res = await request(url, "application/json");
-  return (await res.json()) as SearchResponse;
+  return (await res.json()) as SearchResponse<Doc>;
 }
 
-/** Fetch the HTML of a single job ad page. */
-export async function fetchAdHtml(adId: string): Promise<string> {
-  const res = await request(`${SITE}/job/ad/${adId}`, "text/html");
+/** Fetch the HTML of a single page on finn.no. */
+export async function fetchHtml(url: string): Promise<string> {
+  const res = await request(url, "text/html");
   return await res.text();
 }
 
 /** Build the human-facing search URL that matches a set of API params. */
-export function webSearchUrl(params: URLSearchParams): string {
+export function webSearchUrl(vertical: Vertical, params: URLSearchParams): string {
   const web = new URLSearchParams(params);
   web.delete("rows");
-  return `${SITE}/job/search?${web.toString()}`;
+  return `${SITE}${vertical.searchPath}?${web.toString()}`;
 }

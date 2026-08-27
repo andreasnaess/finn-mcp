@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * finn-mcp — an MCP server for browsing job ads on finn.no (FINN Jobb).
+ * finn-jobs-mcp — an MCP server for browsing job ads on finn.no (FINN Jobb).
  *
  * Three tools:
  *   search_jobs         — the main search, with human-readable filter names
@@ -13,18 +13,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { getAd, parseAdId, type JobAd } from "./ad.js";
-import { FinnError } from "./finn.js";
+import { FinnError } from "../core/http.js";
+import { UnknownOptionError, type ResolvedOption } from "../core/taxonomy.js";
 import { renderResults, runSearch, SORTS, type SearchArgs } from "./search.js";
-import {
-  ALIASES,
-  FILTER_NAMES,
-  optionsFor,
-  UnknownOptionError,
-  type FilterName,
-  type ResolvedOption,
-} from "./taxonomy.js";
+import { ALIASES, FILTER_NAMES, taxonomy, type FilterName } from "./config.js";
 
-const server = new McpServer({ name: "finn-mcp", version: "0.1.0" });
+const server = new McpServer({ name: "finn-jobs-mcp", version: "0.1.0" });
 
 const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
 const errorResult = (text: string) => ({
@@ -39,7 +33,7 @@ async function guard(fn: () => Promise<string>) {
   } catch (err) {
     if (err instanceof UnknownOptionError) return errorResult(err.message);
     if (err instanceof FinnError) return errorResult(err.message);
-    return errorResult(`finn-mcp failed: ${(err as Error).message}`);
+    return errorResult(`finn-jobs-mcp failed: ${(err as Error).message}`);
   }
 }
 
@@ -243,7 +237,7 @@ server.registerTool(
   },
   async ({ filter, contains, limit }) =>
     guard(async () => {
-      let options = await optionsFor(filter);
+      let options = await taxonomy.optionsFor(filter);
       if (contains?.trim()) {
         const needle = contains.trim().toLowerCase();
         options = options.filter(
@@ -272,6 +266,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error("finn-mcp failed to start:", err);
+  console.error("finn-jobs-mcp failed to start:", err);
   process.exit(1);
 });
