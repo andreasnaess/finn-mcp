@@ -2,7 +2,7 @@
   "name": "finn-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "MCP servers for browsing finn.no, one per vertical (currently: FINN Jobb)",
+  "description": "MCP servers for browsing finn.no, one per marketplace (currently: FINN Jobb)",
   "type": "module",
   "bin": {
     "finn-jobs-mcp": "dist/jobs/index.js"

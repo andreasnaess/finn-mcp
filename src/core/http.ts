@@ -1,9 +1,9 @@
 /**
- * Low-level HTTP access to finn.no, shared by every vertical.
+ * Low-level HTTP access to finn.no, shared by every marketplace.
  *
  * FINN's search pages are React apps that talk to public, unauthenticated JSON
- * endpoints. Each vertical ships its own base URL and search key in the page's
- * `data-props` payload:
+ * endpoints. Each marketplace ships its own base URL and search key in the
+ * page's `data-props` payload:
  *
  *   <script type="application/json" data-props>  (base64)
  *     { "apiUrl": "https://www.finn.no/job/job-search-page/api",
@@ -11,8 +11,8 @@
  *
  * and the client bundle builds requests as
  * `${apiUrl}/unified-search/${searchKey}?<params>`. Those two values are the
- * only things that differ between verticals at this layer, so they are passed
- * in as a `Vertical` rather than hard-coded here.
+ * only things that differ between marketplaces at this layer, so they are
+ * passed in as a `Marketplace` rather than hard-coded here.
  *
  * There is no documented public API contract here, so everything this module
  * depends on is re-verified at runtime where practical: filter codes are read
@@ -21,8 +21,11 @@
 
 export const SITE = "https://www.finn.no";
 
-/** The per-vertical endpoint coordinates. See `jobs/config.ts` for an example. */
-export interface Vertical {
+/**
+ * One marketplace's endpoint coordinates — all `core/` needs to talk to it.
+ * See `jobs/config.ts` for an example.
+ */
+export interface Marketplace {
   /** Search API base, e.g. "https://www.finn.no/job/job-search-page/api". */
   apiBase: string;
   /** Search key the client bundle uses, e.g. "SEARCH_ID_JOB_FULLTIME". */
@@ -93,8 +96,8 @@ export interface FilterGroup {
 
 /**
  * A search response. The `filters` and `metadata` envelope is the same across
- * verticals; only the shape of a result row differs, so `Doc` is left to the
- * vertical (see `JobDoc` in `jobs/search.ts`).
+ * marketplaces; only the shape of a result row differs, so `Doc` is left to
+ * the marketplace (see `JobDoc` in `jobs/search.ts`).
  */
 export interface SearchResponse<Doc> {
   docs: Doc[];
@@ -113,12 +116,16 @@ export interface SearchResponse<Doc> {
   };
 }
 
-/** Call a vertical's unified-search endpoint. `params` are passed through as-is. */
+/**
+ * Call a marketplace's unified-search endpoint. `params` are passed through
+ * as-is.
+ */
 export async function search<Doc>(
-  vertical: Vertical,
+  marketplace: Marketplace,
   params: URLSearchParams,
 ): Promise<SearchResponse<Doc>> {
-  const url = `${vertical.apiBase}/unified-search/${vertical.searchKey}?${params.toString()}`;
+  const { apiBase, searchKey } = marketplace;
+  const url = `${apiBase}/unified-search/${searchKey}?${params.toString()}`;
   const res = await request(url, "application/json");
   return (await res.json()) as SearchResponse<Doc>;
 }
@@ -130,8 +137,11 @@ export async function fetchHtml(url: string): Promise<string> {
 }
 
 /** Build the human-facing search URL that matches a set of API params. */
-export function webSearchUrl(vertical: Vertical, params: URLSearchParams): string {
+export function webSearchUrl(
+  marketplace: Marketplace,
+  params: URLSearchParams,
+): string {
   const web = new URLSearchParams(params);
   web.delete("rows");
-  return `${SITE}${vertical.searchPath}?${web.toString()}`;
+  return `${SITE}${marketplace.searchPath}?${web.toString()}`;
 }

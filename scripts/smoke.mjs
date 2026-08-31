@@ -4,8 +4,8 @@
  * the server reports about itself plus the tools it exposes. Replaces a plain
  * `start` script, which only ever hung waiting for JSON-RPC on stdin.
  *
- *   npm run smoke          # every vertical
- *   npm run smoke jobs     # one vertical
+ *   npm run smoke          # every marketplace
+ *   npm run smoke jobs     # one marketplace
  */
 
 import { spawn } from "node:child_process";
@@ -18,13 +18,15 @@ const pkg = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
 
 const servers = Object.entries(pkg.bin ?? {}).map(([binName, binPath]) => ({
   serverName: binName.replace(/-mcp$/, ""),
-  vertical: binName.replace(/-mcp$/, "").replace(/^finn-/, ""),
+  marketplace: binName.replace(/-mcp$/, "").replace(/^finn-/, ""),
   entry: resolve(repoRoot, binPath),
 }));
 
 const wanted = process.argv.slice(2);
 const selected = wanted.length
-  ? servers.filter((s) => wanted.includes(s.vertical) || wanted.includes(s.serverName))
+  ? servers.filter(
+      (s) => wanted.includes(s.marketplace) || wanted.includes(s.serverName),
+    )
   : servers;
 
 /** Drive one server through initialize + tools/list, resolving to its replies. */

@@ -7,10 +7,10 @@
  * them from the `filters` array that every search response carries, and resolve
  * user-supplied names against it.
  *
- * The engine is vertical-agnostic: `createTaxonomy` binds it to one vertical's
- * endpoint and alias table, and each vertical gets its own cache. Filter names
- * are the type parameter `F`, so a vertical keeps full type-safety over its own
- * filter list (see `FilterName` in `jobs/config.ts`).
+ * The engine is marketplace-agnostic: `createTaxonomy` binds it to one
+ * marketplace's endpoint and alias table, and each marketplace gets its own
+ * cache. Filter names are the type parameter `F`, so a marketplace keeps full
+ * type-safety over its own filter list (see `FilterName` in `jobs/config.ts`).
  *
  * The taxonomy is fetched once per process from an unfiltered search (an
  * unfiltered request is the only one that returns the *complete* tree; once a
@@ -18,7 +18,7 @@
  * selected branch).
  */
 
-import { search, type FilterGroup, type FilterItem, type Vertical } from "./http.js";
+import { search, type FilterGroup, type FilterItem, type Marketplace } from "./http.js";
 
 export interface ResolvedOption {
   /** Display name exactly as FINN spells it. */
@@ -104,7 +104,7 @@ export class UnknownOptionError extends Error {
   }
 }
 
-/** One vertical's bound taxonomy. */
+/** One marketplace's bound taxonomy. */
 export interface Taxonomy<F extends string> {
   /** The alias table this taxonomy was built with, for tool descriptions. */
   aliases: Aliases;
@@ -115,16 +115,16 @@ export interface Taxonomy<F extends string> {
   labelFor(filter: F, value: string): Promise<string>;
 }
 
-/** Bind the taxonomy engine to one vertical. Each call gets its own cache. */
+/** Bind the taxonomy engine to a marketplace. Each call gets its own cache. */
 export function createTaxonomy<F extends string>(
-  vertical: Vertical,
+  marketplace: Marketplace,
   aliases: Aliases,
 ): Taxonomy<F> {
   let cache: { at: number; groups: Map<string, FilterGroup> } | null = null;
   let inFlight: Promise<Map<string, FilterGroup>> | null = null;
 
   async function load(): Promise<Map<string, FilterGroup>> {
-    const res = await search<unknown>(vertical, new URLSearchParams({ rows: "1" }));
+    const res = await search<unknown>(marketplace, new URLSearchParams({ rows: "1" }));
     const groups = new Map<string, FilterGroup>();
     for (const group of res.filters ?? []) {
       if (group?.name) groups.set(group.name, group);

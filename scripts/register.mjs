@@ -3,12 +3,12 @@
  * Registers this repo's MCP servers with Claude Code.
  *
  * The `bin` map in package.json is the single source of truth: each entry is
- * one vertical's server, and its name minus the `-mcp` suffix is the name the
- * server is registered under (`finn-jobs-mcp` -> `finn-jobs`). Adding a
- * vertical therefore means adding a `bin` entry and nothing else.
+ * one marketplace's server, and its name minus the `-mcp` suffix is the name
+ * the server is registered under (`finn-jobs-mcp` -> `finn-jobs`). Adding a
+ * marketplace therefore means adding a `bin` entry and nothing else.
  *
- *   npm run register              # every vertical
- *   npm run register jobs         # one vertical, by short name or server name
+ *   npm run register              # every marketplace
+ *   npm run register jobs         # one marketplace, short or server name
  *   npm run register -- --print   # emit mcpServers JSON for other MCP clients
  */
 
@@ -25,7 +25,7 @@ const servers = Object.entries(pkg.bin ?? {}).map(([binName, binPath]) => {
   const serverName = binName.replace(/-mcp$/, "");
   return {
     serverName,
-    vertical: serverName.replace(/^finn-/, ""),
+    marketplace: serverName.replace(/^finn-/, ""),
     entry: resolve(repoRoot, binPath),
   };
 });
@@ -40,13 +40,15 @@ const args = process.argv.slice(2);
 const printOnly = args.includes("--print");
 const wanted = args.filter((a) => !a.startsWith("--"));
 const selected = wanted.length
-  ? servers.filter((s) => wanted.includes(s.vertical) || wanted.includes(s.serverName))
+  ? servers.filter(
+      (s) => wanted.includes(s.marketplace) || wanted.includes(s.serverName),
+    )
   : servers;
 
 if (selected.length === 0) {
   console.error(
-    `Unknown vertical: ${wanted.join(", ")}\n` +
-      `Known: ${servers.map((s) => s.vertical).join(", ")}`,
+    `Unknown marketplace: ${wanted.join(", ")}\n` +
+      `Known: ${servers.map((s) => s.marketplace).join(", ")}`,
   );
   process.exit(1);
 }
