@@ -10,7 +10,7 @@ taxonomy; they share this repo, a build and the HTTP layer, nothing more.
 
 ## Setup
 
-Needs Node 20+ (`fetch` and ES2023). Developed on Node 25 / npm 11.
+Needs Node 20+ (`fetch` and ES2023).
 
 ```sh
 git clone <repo-url> finn-mcp && cd finn-mcp
