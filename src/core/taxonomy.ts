@@ -124,7 +124,11 @@ export function createTaxonomy<F extends string>(
   let cache: { at: number; groups: Map<string, FilterGroup> } | null = null;
 
   async function load(): Promise<Map<string, FilterGroup>> {
-    const res = await search<unknown>(marketplace, new URLSearchParams({ rows: "1" }));
+    const res = await search<unknown>(
+      marketplace,
+      new URLSearchParams({ rows: "1" }),
+      TAXONOMY_TTL_MS / 1000,
+    );
     const groups = new Map<string, FilterGroup>();
     for (const group of res.filters ?? []) {
       if (group?.name) groups.set(group.name, group);
@@ -142,7 +146,14 @@ export function createTaxonomy<F extends string>(
    */
   async function getTaxonomy(): Promise<Map<string, FilterGroup>> {
     if (cache && Date.now() - cache.at < TAXONOMY_TTL_MS) return cache.groups;
-    return load();
+    try {
+      return await load();
+    } catch (err) {
+      // Filter codes change about once a year, so a stale tree beats failing
+      // the tool call outright when finn.no is refusing us this minute.
+      if (cache) return cache.groups;
+      throw err;
+    }
   }
 
   async function optionsFor(filter: F): Promise<ResolvedOption[]> {

@@ -59,19 +59,27 @@ export class FinnError extends Error {
 const RETRY_STATUSES = new Set([403, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [500, 1500];
 
-async function request(url: string, accept: string): Promise<Response> {
+async function request(
+  url: string,
+  accept: string,
+  cacheTtlSeconds?: number,
+): Promise<Response> {
   for (const delay of RETRY_DELAYS_MS) {
     try {
-      return await attempt(url, accept);
+      return await attempt(url, accept, cacheTtlSeconds);
     } catch (err) {
       if (!(err instanceof FinnError) || !RETRY_STATUSES.has(err.status ?? 0)) throw err;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  return attempt(url, accept);
+  return attempt(url, accept, cacheTtlSeconds);
 }
 
-async function attempt(url: string, accept: string): Promise<Response> {
+async function attempt(
+  url: string,
+  accept: string,
+  cacheTtlSeconds?: number,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
@@ -83,6 +91,12 @@ async function attempt(url: string, accept: string): Promise<Response> {
       },
       signal: controller.signal,
       redirect: "follow",
+      // Ignored off-Workers. On Workers this shares one response across every
+      // isolate in the colo, so finn.no sees one request an hour instead of
+      // one per cold isolate — which is what its sporadic 403s punish.
+      ...(cacheTtlSeconds
+        ? { cf: { cacheEverything: true, cacheTtl: cacheTtlSeconds } }
+        : {}),
     });
     if (!res.ok) {
       throw new FinnError(
@@ -144,10 +158,11 @@ export interface SearchResponse<Doc> {
 export async function search<Doc>(
   marketplace: Marketplace,
   params: URLSearchParams,
+  cacheTtlSeconds?: number,
 ): Promise<SearchResponse<Doc>> {
   const { apiBase, searchKey } = marketplace;
   const url = `${apiBase}/unified-search/${searchKey}?${params.toString()}`;
-  const res = await request(url, "application/json");
+  const res = await request(url, "application/json", cacheTtlSeconds);
   return (await res.json()) as SearchResponse<Doc>;
 }
 
