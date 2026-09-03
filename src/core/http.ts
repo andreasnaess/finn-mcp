@@ -109,14 +109,15 @@ async function attempt(
           }
         : {}),
     });
-    // stderr, not stdout: stdout is the JSON-RPC stream on the stdio server.
-    // Read it on Workers with `wrangler tail`. cf-cache=HIT means Cloudflare
-    // served this without touching finn.no.
-    console.error(
-      `[finn] ${res.status} ${Date.now() - started}ms ` +
-        `cf-cache=${res.headers.get("cf-cache-status") ?? "-"} ${url}`,
-    );
     if (!res.ok) {
+      // Failures only — a healthy request logs nothing. stderr, not stdout:
+      // stdout is the JSON-RPC stream on the stdio server. Read it on Workers
+      // with `wrangler tail`. cf-cache tells a refusal from finn.no (MISS or
+      // DYNAMIC) apart from one being replayed out of Cloudflare's cache.
+      console.error(
+        `[finn] ${res.status} ${Date.now() - started}ms ` +
+          `cf-cache=${res.headers.get("cf-cache-status") ?? "-"} ${url}`,
+      );
       throw new FinnError(
         `finn.no returned HTTP ${res.status} for ${url}`,
         res.status,
