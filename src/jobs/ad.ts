@@ -1,9 +1,11 @@
 /**
  * Parsing of a single job ad page (https://www.finn.no/job/ad/<id>).
  *
- * The ad page has no JSON endpoint of its own, but it does carry a
- * schema.org JobPosting block, which gives us the full advert body,
- * employment type, dates and hiring organisation without guesswork. The
+ * The ad page has no JSON endpoint of its own. Most pages carry a schema.org
+ * JobPosting block, which gives us employment type, dates and hiring
+ * organisation without guesswork — but ads FINN imports from an employer's own
+ * recruitment system have no such block, so the advert body is read from the
+ * rendered markup, which every ad has. The
  * remaining fields — FINN's own "key info" strip, the AI-generated summary
  * and skills, the employer fact list — are read from the rendered markup.
  */
@@ -28,6 +30,10 @@ export interface JobAd {
   summary?: string;
   /** AI-extracted skill tags. */
   skills: string[];
+  /** FINN's "Hva vi tilbyr" list. Salary, when stated, is an item here. */
+  whatWeOffer: string[];
+  /** FINN's "Kvalifikasjoner" list. */
+  qualifications: string[];
   /** FINN's own keyword line. */
   keywords?: string;
   /** The "key info" strip: Søknadsfrist, Sektor, Antall stillinger, ... */
@@ -65,6 +71,9 @@ const richText = (html: string): string =>
       .replace(/<!--.*?-->/gs, "")
       .replace(/<\s*br\s*\/?>/gi, "\n")
       .replace(/<\/\s*(p|div|h[1-6]|section|tr)\s*>/gi, "\n\n")
+      // Imported adverts leave headings as bare text before the next block
+      // ("Om stillingen<p>..."), so opening tags have to break the line too.
+      .replace(/<\s*(p|div|h[1-6]|section|ul|ol|table)\b[^>]*>/gi, "\n\n")
       .replace(/<\s*li[^>]*>/gi, "\n- ")
       .replace(/<\/\s*(ul|ol)\s*>/gi, "\n")
       .replace(/<[^>]*>/g, ""),
@@ -73,6 +82,67 @@ const richText = (html: string): string =>
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+/**
+ * The inner HTML of the balanced `<div>` opening at `openTagStart`.
+ *
+ * The advert body is nested divs, so a non-greedy `</div>` match would stop at
+ * the first child's close. Counting depth is the only correct way to end it.
+ */
+function innerDiv(html: string, openTagStart: number): string | undefined {
+  const bodyStart = html.indexOf(">", openTagStart);
+  if (bodyStart < 0) return undefined;
+  let depth = 1;
+  for (const m of html.slice(bodyStart + 1).matchAll(/<(\/?)div\b/g)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(bodyStart + 1, bodyStart + 1 + m.index);
+  }
+  return undefined;
+}
+
+/**
+ * The advert body as rendered on the page.
+ *
+ * Ads FINN imports from an employer's own recruitment system (`adType`
+ * AGGREGATED_JOB) are served from a different template that carries no
+ * schema.org block at all, so the JSON-LD description is missing on them.
+ * Both templates wrap the advert in `div.import-decoration` — the first such
+ * block is the advert, the second is the "om arbeidsgiveren" blurb.
+ *
+ * This is deliberately the only source. Falling back to the JSON-LD
+ * description would let a change to this markup degrade silently on the ads
+ * that happen to carry a schema.org block (about 93% of them, and nearly all
+ * of the most recently published), which is precisely how the missing bodies
+ * went unnoticed before. One source fails loudly, on every ad, and the smoke
+ * check catches it.
+ */
+function parseAdvertBody(html: string): string | undefined {
+  const open = /<div[^>]*class="[^"]*\bimport-decoration\b[^"]*"[^>]*>/.exec(html);
+  if (!open) return undefined;
+  const body = innerDiv(html, open.index);
+  if (!body) return undefined;
+  const rendered = richText(body);
+  return rendered || undefined;
+}
+
+/**
+ * Employer name from FINN's own tracking payload, which both templates carry.
+ * Used when there is no JSON-LD hiringOrganization to read it from.
+ */
+function parseCompanyName(html: string): string | undefined {
+  const m = /"key":"company_name","value":\["([^"]+)"\]/.exec(html);
+  return m?.[1] ? decodeEntities(m[1]) : undefined;
+}
+
+/**
+ * Publication date from the page's embedded ad payload. The payload is a
+ * JS string on the aggregated template, so the quotes around the key arrive
+ * backslash-escaped; match either shape.
+ */
+function parseDatePosted(html: string): string | undefined {
+  const m = /\\*"datePosted\\*"\s*[:,]\s*\\*"(\d{4}-\d{2}-\d{2})/.exec(html);
+  return m?.[1];
+}
 
 /** FINN prints dates as dd.mm.yyyy; everything else here is ISO. */
 function toIsoDate(value: string | undefined): string | undefined {
@@ -153,15 +223,25 @@ function parseSummary(html: string): string | undefined {
   return para?.[1] ? text(para[1]) : undefined;
 }
 
-function parseSkills(html: string): string[] {
-  const idx = html.indexOf("Ferdigheter");
-  if (idx < 0) return [];
-  const region = html.slice(idx, idx + 6000);
-  const list = /<ul[^>]*>(.*?)<\/ul>/s.exec(region);
-  if (!list?.[1]) return [];
-  return [...list[1].matchAll(/<span class="truncate whitespace-nowrap">(.*?)<\/span>/gs)]
-    .map((m) => text(m[1] ?? ""))
-    .filter(Boolean);
+/**
+ * The bullet list under a card heading. FINN renders "Ferdigheter",
+ * "Kvalifikasjoner" and "Hva vi tilbyr" the same way — a heading followed by a
+ * `<ul>` — so one reader serves all three. A heading can carry a badge after
+ * its label ("Ferdigheter AI-generert"), hence the prefix match rather than
+ * an equality check.
+ */
+function parseBulletSection(html: string, heading: string): string[] {
+  for (const m of html.matchAll(/<h([23])[^>]*>(.*?)<\/h\1>/gs)) {
+    if (!text(m[2] ?? "").startsWith(heading)) continue;
+    const after = html.slice(m.index + m[0].length);
+    const list = /^(?:\s|<div[^>]*>)*<ul[^>]*>(.*?)<\/ul>/s.exec(after);
+    if (!list?.[1]) continue;
+    const items = [...list[1].matchAll(/<li[^>]*>(.*?)<\/li>/gs)]
+      .map((li) => text(li[1] ?? ""))
+      .filter(Boolean);
+    if (items.length) return items;
+  }
+  return [];
 }
 
 function parseKeywords(html: string): string | undefined {
@@ -194,9 +274,9 @@ export function parseAd(id: string, html: string): JobAd {
     url: adUrl(id),
     heading: parseHeading(html),
     jobTitle: ld?.title,
-    company: ld?.hiringOrganization?.name,
+    company: ld?.hiringOrganization?.name ?? parseCompanyName(html),
     companyUrl: ld?.hiringOrganization?.url,
-    datePosted: ld?.datePosted,
+    datePosted: ld?.datePosted ?? parseDatePosted(html),
     deadline: toIsoDate(keyInfo["Søknadsfrist"]) ?? ld?.validThrough,
     employmentType: ld?.employmentType
       ? Array.isArray(ld.employmentType)
@@ -207,11 +287,13 @@ export function parseAd(id: string, html: string): JobAd {
       .filter(Boolean)
       .join(" ") || undefined,
     summary: parseSummary(html),
-    skills: parseSkills(html),
+    skills: parseBulletSection(html, "Ferdigheter"),
+    whatWeOffer: parseBulletSection(html, "Hva vi tilbyr"),
+    qualifications: parseBulletSection(html, "Kvalifikasjoner"),
     keywords: parseKeywords(html),
     keyInfo,
     facts,
-    description: ld?.description ? richText(ld.description) : undefined,
+    description: parseAdvertBody(html),
     applyUrl: applyMatch?.[1],
   };
 }

@@ -176,6 +176,9 @@ function renderAd(ad: JobAd): string {
 
   if (ad.summary) lines.push(`\n## Summary (FINN's AI-generated "Kortversjonen")\n${ad.summary}`);
   if (ad.skills.length) lines.push(`\n## Skills (AI-extracted)\n${ad.skills.join(", ")}`);
+  const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
+  if (ad.whatWeOffer.length) lines.push(`\n## What the employer offers\n${bullets(ad.whatWeOffer)}`);
+  if (ad.qualifications.length) lines.push(`\n## Qualifications\n${bullets(ad.qualifications)}`);
 
   const details = { ...ad.keyInfo, ...ad.facts };
   const detailLines = Object.entries(details).map(([k, v]) => `- ${k}: ${v}`);
@@ -194,7 +197,10 @@ server.registerTool(
     description:
       "Fetch the full advert for one FINN job listing: the complete job " +
       "description, application deadline, employer, required skills and the " +
-      "apply link. Takes the ad id from search_jobs, or a finn.no ad URL.",
+      "apply link. Also returns FINN's \"Hva vi tilbyr\" list, which is where " +
+      "an advert states salary when it states one at all — FINN has no salary " +
+      "field, so there is nothing to sort or filter on in search_jobs. " +
+      "Takes the ad id from search_jobs, or a finn.no ad URL.",
     inputSchema: {
       ad: z
         .string()
