@@ -1,77 +1,56 @@
 # finn-mcp
 
 MCP servers for browsing [finn.no](https://www.finn.no), one per FINN
-marketplace. Each is its own server process with its own tools and filter
-taxonomy; they share this repo, a build and the HTTP layer, nothing more.
+marketplace. They share this repo, a build and the HTTP layer, nothing more.
 
 | Marketplace | Server | Covers |
 | --- | --- | --- |
-| Jobs | `finn-jobs` | [FINN Jobb](https://www.finn.no/job/search) — every job advert on FINN, filtered by occupation, area, sector and more |
+| Jobs | `finn-jobs` | [FINN Jobb](https://www.finn.no/job/search) — every job advert on FINN |
 
 ## Setup
 
-Needs Node 20+ (`fetch` and ES2023).
+Node 20+.
 
 ```sh
-git clone <repo-url> finn-mcp && cd finn-mcp
-pnpm install          # installs deps and builds, via the prepare script
-pnpm run register     # registers each server with Claude Code, user-scoped
-pnpm run smoke        # check each server starts and list its tools
+pnpm install          # installs and builds, via the prepare script
+pnpm run register     # registers each server with Claude Code
+pnpm run smoke        # check each server starts and lists its tools
 ```
 
-`register` resolves the absolute path from wherever you cloned to, so there is
-nothing machine-specific to edit. Re-run it after moving the clone. Pass a name
-(`pnpm run register -- jobs`) for just one, or `-- --print` to emit `mcpServers`
-JSON for clients that aren't configured through the `claude` CLI.
+`register` resolves absolute paths itself — re-run it after moving the clone.
+Add a name (`-- jobs`) for one server, `-- --print` for `mcpServers` JSON.
 
 ## Remote (Cloudflare Workers)
 
-The jobs server also runs as a Cloudflare Worker, which is what a
-[claude.ai custom connector](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)
-needs. Same tools, same code — only the transport differs.
+The jobs server also runs as a Worker — same tools, different transport — which
+is what a [claude.ai custom connector](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)
+needs.
 
 ```sh
-pnpm run worker:dev       # local, on http://localhost:8787
-pnpm run worker:deploy    # to your Cloudflare account
+pnpm run worker:dev
+pnpm run worker:deploy
 ```
 
-Then add the deployed URL in Claude under Settings → Connectors → Add custom
-connector.
-
-It deploys **authless**: every tool reads public, read-only finn.no data, so
-there is no credential to check and nothing user-specific to protect. Claude's
-other option here is full OAuth; a fixed bearer token is not one, as Claude
-only accepts static credentials via `static_headers`, which is beta and entered
-by an organization administrator.
-
-Authless does leave the endpoint open to anyone who has the URL, and that
-traffic reaches finn.no under this project's `User-Agent`, so the Worker rate
-limits itself — 30 requests/minute per IP, configured in `wrangler.toml`. It
-does this with a
-[rate-limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
-rather than a WAF rate-limiting rule, because WAF rules are scoped to a zone
-and `workers.dev` is not one.
-
-It fits the Workers free plan comfortably: the work is I/O-bound (one or two
-`fetch`es per call, against a 50-subrequest limit), the parsing costs on the
-order of a millisecond against a 10 ms CPU budget, and the bundle is ~175 KB
-gzipped against a 3 MB cap.
+Add the URL under Settings → Connectors with no auth; the data is public and
+read-only (Claude takes a fixed token only via admin-entered `static_headers`).
+The Worker rate limits itself instead — 30 req/min per IP, in `wrangler.toml`.
+It uses a binding, not a WAF rule: WAF rules need a zone, `workers.dev` is not
+one.
 
 ## Tools
 
 | Tool | What it does |
 | --- | --- |
-| `search_jobs` | Search adverts by text, area, job function, industry, seniority, remote policy, publication date and deadline. Filters take plain names, not FINN's numeric codes. |
-| `get_job` | One advert in full: description, deadline, employer, skills, apply link, and the employer's "Hva vi tilbyr" list — where salary appears, when an advert states it. |
+| `search_jobs` | Search by text, area, job function, industry, seniority, remote policy, publication date and deadline. |
+| `get_job` | One advert in full, including the "Hva vi tilbyr" list — where salary appears, when an advert states it. |
 | `list_filter_options` | Browse FINN's live filter taxonomy, with ad counts. |
 
 ## Filtering
 
-`role` and `area` take names, not FINN's numeric codes. `role` is FINN's
-*Stilling* filter — 83 top-level occupations covering every trade and
-profession on FINN, most of them with children. A parent matches everything
-under it, so `["Helsepersonell"]` is broader than `["Sykepleier"]`. `area`
-takes any county, municipality or Oslo district. Repeated values are OR-ed.
+`role` is FINN's *Stilling* filter — 83 top-level occupations covering every
+trade and profession, most with children, and a parent matches everything under
+it. `area` takes any county, municipality or Oslo district. Repeated values are
+OR-ed. Omit `role` and the search covers all of FINN.
 
 ```jsonc
 // Nurses in Bergen, permanent positions
@@ -85,40 +64,30 @@ takes any county, municipality or Oslo district. Repeated values are OR-ed.
 { "area": ["Tromsø"], "deadline_within_days": 7, "sort": "deadline" }
 ```
 
-Omit `role` and the search covers every advert on FINN; `query` alone works
-too, for occupations the taxonomy splits differently than you would.
-
-`list_filter_options` is the source of truth for which values exist — the
-taxonomy is read from FINN at request time, so no copy of it belongs here.
-Matching ignores case and accents, and the small closed filters (`extent`,
-`remote`, `sector`, `employment_type`, `experience`, `language`) also accept
-English aliases; see `ALIASES` in `src/jobs/config.ts`.
+`list_filter_options` is the source of truth for which values exist. Matching
+ignores case and accents; the small closed filters also take English aliases
+(`ALIASES` in `src/jobs/config.ts`).
 
 ## How it works
 
-FINN's search pages are React apps calling a public, unauthenticated JSON
-endpoint, with the base URL and search key the page itself ships. Every
-response carries the complete filter taxonomy, so this server resolves names to
-codes at runtime (cached for an hour) instead of baking in codes that go stale
-— as FINN's 2024 county renumbering would have. Individual adverts have no JSON
-endpoint and are parsed from the ad page.
+FINN's search pages call a public JSON endpoint whose base URL and search key
+the page itself ships. Every response carries the full filter taxonomy, so names
+resolve to codes at runtime (cached an hour) rather than baking in codes that go
+stale. Adverts are parsed from the ad page — they have no JSON endpoint.
 
 ```
 src/
-  core/    marketplace-agnostic: HTTP, and the filter-taxonomy engine
-  jobs/    the FINN Jobb marketplace: config, tools, search, ad parsing
+  core/    marketplace-agnostic: HTTP, taxonomy engine
+  jobs/    FINN Jobb: config, tools, search, ad parsing
     server.ts   the tools — one factory both entry points call
-    index.ts    entry point: stdio, for local clients
-    worker.ts   entry point: HTTP, for Cloudflare Workers
+    index.ts    stdio entry
+    worker.ts   HTTP entry
 ```
 
 A new marketplace is a sibling of `jobs/` with its own `config.ts` and
-`server.ts`, plus a `bin` entry in `package.json`. No marketplace-specific
-values live in `core/`.
+`server.ts`, plus a `bin` entry. Nothing marketplace-specific in `core/`.
 
 ## Caveats
 
-An undocumented endpoint, not a supported API: it can change without notice.
-The runtime taxonomy lookup absorbs value changes; an endpoint change would
-need a fix here. Requests go one at a time, with an identifying `User-Agent`,
-at browsing volumes.
+Undocumented endpoints, not a supported API. The runtime taxonomy absorbs value
+changes; an endpoint change needs a fix here.
