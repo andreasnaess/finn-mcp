@@ -82,6 +82,7 @@ async function attempt(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const started = Date.now();
   try {
     const res = await fetch(url, {
       headers: {
@@ -98,6 +99,13 @@ async function attempt(
         ? { cf: { cacheEverything: true, cacheTtl: cacheTtlSeconds } }
         : {}),
     });
+    // stderr, not stdout: stdout is the JSON-RPC stream on the stdio server.
+    // Read it on Workers with `wrangler tail`. cf-cache=HIT means Cloudflare
+    // served this without touching finn.no.
+    console.error(
+      `[finn] ${res.status} ${Date.now() - started}ms ` +
+        `cf-cache=${res.headers.get("cf-cache-status") ?? "-"} ${url}`,
+    );
     if (!res.ok) {
       throw new FinnError(
         `finn.no returned HTTP ${res.status} for ${url}`,
