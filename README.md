@@ -91,3 +91,7 @@ A new marketplace is a sibling of `jobs/` with its own `config.ts` and
 
 Undocumented endpoints, not a supported API. The runtime taxonomy absorbs value
 changes; an endpoint change needs a fix here.
+
+## License
+
+MIT. Covers this code, not FINN's data.

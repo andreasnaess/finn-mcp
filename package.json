@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "MCP servers for browsing finn.no, one per marketplace (currently: FINN Jobb)",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "finn-jobs-mcp": "dist/jobs/index.js"
