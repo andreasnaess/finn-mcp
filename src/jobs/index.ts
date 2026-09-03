@@ -45,19 +45,20 @@ server.registerTool(
   {
     title: "Search FINN job ads",
     description:
-      "Search job adverts on finn.no (FINN Jobb, Norway). Filters take " +
-      "human-readable names — Norwegian display names as FINN spells them, or " +
-      "the English aliases listed per argument — and are matched " +
+      "Search job adverts on finn.no (FINN Jobb, Norway) — every occupation " +
+      "FINN lists, from nursing, teaching, retail and trades to IT. Filters " +
+      "take human-readable names — Norwegian display names as FINN spells " +
+      "them, or the English aliases listed per argument — and are matched " +
       "case- and accent-insensitively.\n\n" +
-      "For software development roles, the `role` argument is the one that " +
-      'matters: "IT utvikling" covers all of it, and narrower values include ' +
-      '"Backend-utvikler", "Front-end", "Full stack utvikler", ' +
-      '"Utvikler (generell)", "App utvikler", "Cloud-utvikler", ' +
-      '"Embedded-utvikler", "AI / Maskinlæring", "Data Scientist", ' +
-      '"Dataingeniør", "Systemarkitekt", "Løsningsarkitekt", "Tech Lead", ' +
-      '"IT-sikkerhet", "QA/Testing". Use `area` for the location — any ' +
-      "Norwegian county, municipality or Oslo district by name. Call " +
-      "list_filter_options to see every available value.",
+      "`role` is FINN's occupation filter (over 80 top-level values, most " +
+      'with children): e.g. "Sykepleier", "Helsepersonell", ' +
+      '"Undervisning og pedagogikk", "Barnehage", "Håndverker", "Ingeniør", ' +
+      '"Butikkansatt", "Mat og servering", "Salg", "Økonomi og regnskap", ' +
+      '"Transport og sjåfør", "Ledelse", "IT utvikling". A parent value ' +
+      "matches everything under it. Omit `role` to search all adverts.\n\n" +
+      "Do not guess a value that is not listed here — call " +
+      "list_filter_options (with `contains` to narrow) to get the exact " +
+      "spelling for any role, area, industry or education level first.",
     inputSchema: {
       query: z
         .string()
@@ -75,13 +76,18 @@ server.registerTool(
         .array(z.string())
         .optional()
         .describe(
-          "Job function (FINN's 'Stilling' filter), e.g. 'IT utvikling' or " +
-            "'Backend-utvikler'. Multiple roles are OR-ed together.",
+          "Occupation (FINN's 'Stilling' filter), e.g. 'Sykepleier', " +
+            "'Undervisning og pedagogikk', 'Håndverker' or 'IT utvikling'. " +
+            "A parent value includes its children. Multiple roles are OR-ed " +
+            "together. Omit to search every occupation.",
         ),
       industry: z
         .array(z.string())
         .optional()
-        .describe("Industry (FINN's 'Bransje'), e.g. 'IT - programvare', 'IT', 'Konsulent og rådgivning'."),
+        .describe(
+          "Industry (FINN's 'Bransje'), e.g. 'Helse og omsorg', " +
+            "'Undervisning', 'Bygg og anlegg', 'IT - programvare'.",
+        ),
       extent: z.string().optional().describe(`Working hours: ${aliasList("extent")}`),
       remote: z
         .string()
@@ -99,7 +105,10 @@ server.registerTool(
       education: z
         .array(z.string())
         .optional()
-        .describe("Required education, e.g. 'Høyskole/universitet, høyere nivå'."),
+        .describe(
+          "Required education, e.g. 'Fagskole/fagbrev', " +
+            "'Høyskole/universitet, høyere nivå'.",
+        ),
       language: z
         .string()
         .optional()
@@ -219,8 +228,9 @@ server.registerTool(
       filter: z
         .enum(FILTER_NAMES as unknown as [FilterName, ...FilterName[]])
         .describe(
-          "Which filter to list. 'location' = areas, 'occupation' = job " +
-            "functions, 'industry' = industries.",
+          "Which filter to list. 'occupation' = job functions/roles (the " +
+            "full tree, all trades and professions, not only IT), " +
+            "'location' = areas, 'industry' = industries.",
         ),
       contains: z
         .string()
