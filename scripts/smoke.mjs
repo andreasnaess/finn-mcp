@@ -8,8 +8,8 @@
  * called for real, because a server that starts and lists its tools can still
  * return empty results after FINN changes its markup.
  *
- *   npm run smoke          # every marketplace
- *   npm run smoke jobs     # one marketplace
+ *   pnpm run smoke          # every marketplace
+ *   pnpm run smoke jobs     # one marketplace
  */
 
 import { spawn } from "node:child_process";
@@ -134,7 +134,7 @@ const DEEP_CHECKS = {
 let failed = false;
 for (const { serverName, entry } of selected) {
   if (!existsSync(entry)) {
-    console.error(`✗ ${serverName}: not built — run \`npm install\``);
+    console.error(`✗ ${serverName}: not built — run \`pnpm install\``);
     failed = true;
     continue;
   }

@@ -12,7 +12,8 @@
  * cache. Filter names are the type parameter `F`, so a marketplace keeps full
  * type-safety over its own filter list (see `FilterName` in `jobs/config.ts`).
  *
- * The taxonomy is fetched once per process from an unfiltered search (an
+ * The taxonomy is fetched once per process (per Worker isolate, when served
+ * over HTTP) from an unfiltered search (an
  * unfiltered request is the only one that returns the *complete* tree; once a
  * location is selected, for example, FINN narrows the location filter to the
  * selected branch).
@@ -121,7 +122,6 @@ export function createTaxonomy<F extends string>(
   aliases: Aliases,
 ): Taxonomy<F> {
   let cache: { at: number; groups: Map<string, FilterGroup> } | null = null;
-  let inFlight: Promise<Map<string, FilterGroup>> | null = null;
 
   async function load(): Promise<Map<string, FilterGroup>> {
     const res = await search<unknown>(marketplace, new URLSearchParams({ rows: "1" }));
@@ -133,14 +133,16 @@ export function createTaxonomy<F extends string>(
     return groups;
   }
 
+  /**
+   * Concurrent callers that both miss the cache each do their own fetch, and
+   * the last to finish wins. Sharing one in-flight promise would be the
+   * obvious dedupe, but a promise cannot be awaited across two Cloudflare
+   * Worker requests ("Cannot perform I/O on behalf of a different request"),
+   * and the duplicate fetch it saves only ever happens on a cold cache.
+   */
   async function getTaxonomy(): Promise<Map<string, FilterGroup>> {
     if (cache && Date.now() - cache.at < TAXONOMY_TTL_MS) return cache.groups;
-    if (!inFlight) {
-      inFlight = load().finally(() => {
-        inFlight = null;
-      });
-    }
-    return inFlight;
+    return load();
   }
 
   async function optionsFor(filter: F): Promise<ResolvedOption[]> {

@@ -14,15 +14,43 @@ Needs Node 20+ (`fetch` and ES2023).
 
 ```sh
 git clone <repo-url> finn-mcp && cd finn-mcp
-npm install          # installs deps and builds, via the prepare script
-npm run register     # registers each server with Claude Code, user-scoped
-npm run smoke        # check each server starts and list its tools
+pnpm install          # installs deps and builds, via the prepare script
+pnpm run register     # registers each server with Claude Code, user-scoped
+pnpm run smoke        # check each server starts and list its tools
 ```
 
 `register` resolves the absolute path from wherever you cloned to, so there is
 nothing machine-specific to edit. Re-run it after moving the clone. Pass a name
-(`npm run register -- jobs`) for just one, or `-- --print` to emit `mcpServers`
+(`pnpm run register -- jobs`) for just one, or `-- --print` to emit `mcpServers`
 JSON for clients that aren't configured through the `claude` CLI.
+
+## Remote (Cloudflare Workers)
+
+The jobs server also runs as a Cloudflare Worker, which is what a
+[claude.ai custom connector](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)
+needs. Same tools, same code — only the transport differs.
+
+```sh
+pnpm run worker:dev       # local, on http://localhost:8787
+pnpm run worker:deploy    # to your Cloudflare account
+```
+
+Then add the deployed URL in Claude under Settings → Connectors → Add custom
+connector.
+
+It deploys **authless**: every tool reads public, read-only finn.no data, so
+there is no credential to check and nothing user-specific to protect. That does
+leave the endpoint open to anyone who has the URL, and the traffic reaches
+finn.no under this project's `User-Agent` — so put a Cloudflare
+[rate-limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/)
+in front of the Worker. Claude's other option here is full OAuth; a fixed bearer
+token is not one, as Claude only accepts static credentials via `static_headers`,
+which is beta and entered by an organization administrator.
+
+It fits the Workers free plan comfortably: the work is I/O-bound (one or two
+`fetch`es per call, against a 50-subrequest limit), the parsing costs on the
+order of a millisecond against a 10 ms CPU budget, and the bundle is ~175 KB
+gzipped against a 3 MB cap.
 
 ## Tools
 
@@ -74,10 +102,13 @@ endpoint and are parsed from the ad page.
 src/
   core/    marketplace-agnostic: HTTP, and the filter-taxonomy engine
   jobs/    the FINN Jobb marketplace: config, tools, search, ad parsing
+    server.ts   the tools — one factory both entry points call
+    index.ts    entry point: stdio, for local clients
+    worker.ts   entry point: HTTP, for Cloudflare Workers
 ```
 
 A new marketplace is a sibling of `jobs/` with its own `config.ts` and
-`index.ts`, plus a `bin` entry in `package.json`. No marketplace-specific
+`server.ts`, plus a `bin` entry in `package.json`. No marketplace-specific
 values live in `core/`.
 
 ## Caveats

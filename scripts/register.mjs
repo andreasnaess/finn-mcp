@@ -7,9 +7,9 @@
  * the server is registered under (`finn-jobs-mcp` -> `finn-jobs`). Adding a
  * marketplace therefore means adding a `bin` entry and nothing else.
  *
- *   npm run register              # every marketplace
- *   npm run register jobs         # one marketplace, short or server name
- *   npm run register -- --print   # emit mcpServers JSON for other MCP clients
+ *   pnpm run register              # every marketplace
+ *   pnpm run register jobs         # one marketplace, short or server name
+ *   pnpm run register -- --print   # emit mcpServers JSON for other MCP clients
  */
 
 import { spawnSync } from "node:child_process";
@@ -35,7 +35,7 @@ if (servers.length === 0) {
   process.exit(1);
 }
 
-// npm passes script args through after `--`; accept short or full names.
+// pnpm passes script args through after `--`; accept short or full names.
 const args = process.argv.slice(2);
 const printOnly = args.includes("--print");
 const wanted = args.filter((a) => !a.startsWith("--"));
@@ -59,7 +59,7 @@ const unbuilt = selected.filter((s) => !existsSync(s.entry));
 if (unbuilt.length > 0) {
   console.error(
     `Not built: ${unbuilt.map((s) => s.serverName).join(", ")}\n` +
-      `Run \`npm install\` (which builds via the prepare script) first.`,
+      `Run \`pnpm install\` (which builds via the prepare script) first.`,
   );
   process.exit(1);
 }
@@ -77,7 +77,7 @@ if (printOnly) {
 if (spawnSync("claude", ["--version"], { stdio: "ignore" }).status !== 0) {
   console.error(
     "The `claude` CLI was not found on PATH.\n" +
-      "Run `npm run register -- --print` for config you can paste into another client.",
+      "Run `pnpm run register -- --print` for config you can paste into another client.",
   );
   process.exit(1);
 }

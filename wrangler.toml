@@ -1,0 +1,6 @@
+name = "finn-jobs-mcp"
+main = "src/jobs/worker.ts"
+compatibility_date = "2026-09-03"
+
+# No nodejs_compat: src/ imports no node: builtins, and the MCP SDK ships a
+# workerd build that swaps in a Workers-safe JSON Schema validator.
