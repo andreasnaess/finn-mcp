@@ -50,7 +50,28 @@ export class FinnError extends Error {
   }
 }
 
+/**
+ * Statuses worth a second attempt. 403 is in here because finn.no serves one
+ * sporadically to datacenter IPs — harmless from a laptop, but the Worker
+ * egresses from Cloudflare and sees it often enough to matter. A retry turns
+ * that into a success; a real block would fail all attempts alike.
+ */
+const RETRY_STATUSES = new Set([403, 429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500];
+
 async function request(url: string, accept: string): Promise<Response> {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return await attempt(url, accept);
+    } catch (err) {
+      if (!(err instanceof FinnError) || !RETRY_STATUSES.has(err.status ?? 0)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return attempt(url, accept);
+}
+
+async function attempt(url: string, accept: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
