@@ -95,8 +95,18 @@ async function attempt(
       // Ignored off-Workers. On Workers this shares one response across every
       // isolate in the colo, so finn.no sees one request an hour instead of
       // one per cold isolate — which is what its sporadic 403s punish.
+      //
+      // Per status, never a flat cacheTtl: that cached finn.no's sporadic 403
+      // too, and then served it from cache — instantly, for the full hour, to
+      // every isolate in the colo. The negative TTL keeps errors uncached, so
+      // a retry actually reaches finn.no again.
       ...(cacheTtlSeconds
-        ? { cf: { cacheEverything: true, cacheTtl: cacheTtlSeconds } }
+        ? {
+            cf: {
+              cacheEverything: true,
+              cacheTtlByStatus: { "200-299": cacheTtlSeconds, "300-599": -1 },
+            },
+          }
         : {}),
     });
     // stderr, not stdout: stdout is the JSON-RPC stream on the stdio server.
