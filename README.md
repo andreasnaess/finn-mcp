@@ -29,89 +29,37 @@ JSON for clients that aren't configured through the `claude` CLI.
 | Tool | What it does |
 | --- | --- |
 | `search_jobs` | Search adverts by text, area, job function, industry, seniority, remote policy, publication date and deadline. Filters take plain names, not FINN's numeric codes. |
-| `get_job` | One advert in full: description, deadline, employer, skills, apply link. |
+| `get_job` | One advert in full: description, deadline, employer, skills, apply link, and the employer's "Hva vi tilbyr" list — where salary appears, when an advert states it. |
 | `list_filter_options` | Browse FINN's live filter taxonomy, with ad counts. |
 
-## Filtering by role and area
+## Filtering
 
-`role` maps to FINN's *Stilling* filter, which spans every occupation on FINN,
-not just IT — 83 top-level values over ~27 000 live adverts (counts read
-2026-09-03):
-
-`Agronom` · `Analyse` · `Arkitekt og planlegging` · `Arkivar og bibliotekar` ·
-`Barnehage` · `Barnevernspedagog` · `Biolog` · `Brannvern` ·
-`Brukerstøtte/support` · `Butikkansatt` · `Butikksjef` · `Design` ·
-`Dokumentasjon` · `Driftsoperatør/vaktmester` · `Forhandling` ·
-`Forretningsutvikling og strategi` · `Forskning/Stipendiat/Postdoktor` ·
-`Foto, lyd og lys` · `Franchise` · `Frisør` · `Geologi/Fysikk/Kjemi` ·
-`Helsepersonell` · `HMS` · `Hotell og overnatting` ·
-`HR, personal og rekruttering` · `Hudpleie og Massasje` · `Håndverker` ·
-`Ingeniør` · `Innkjøp/forhandling` · `IT drift og vedlikehold` ·
-`IT utvikling` · `Journalist` · `Jurist` · `Konsulent` ·
-`Kontor og administrasjon` · `Koordinering` · `Kultur og museum` ·
-`Kundeservice` · `Kurs og opplæring` · `Kvalitetssikring` · `Ledelse` · `Lege` ·
-`Logistikk og lager` · `Markedsfører` · `Maskinfører og -operatør` ·
-`Mat og servering` · `Megler` · `Mekanikk og installasjon` · `Menighetsarbeid` ·
-`Militært personell` · `Omsorg og sosialt arbeid` · `Pilot og flypersonell` ·
-`Planlegger` · `Politi` · `PR og informasjon` · `Prest` · `Produksjon` ·
-`Produktledelse` · `Prosjektledelse` · `Renhold` · `Revisjon og kontroll` ·
-`Rådgivning` · `Saksbehandler` · `Salg` · `Salgsledelse` · `Samfunnsviter` ·
-`Sikkerhet` · `Sjøfart` · `Sosionom` · `Sykepleier` · `Teknisk personell` ·
-`Teknisk service` · `Teknisk tegner` · `Tekstforfatter` · `Tolk/oversetter` ·
-`Transport og sjåfør` · `Trener / Personlig trener` ·
-`Undervisning og pedagogikk` · `Utøvende kunst` · `Vakt og sikkerhet` ·
-`Veterinær og dyrepleier` · `Økonomi og regnskap` · `Annet`
-
-Most of those have children — `Sykepleier` → `Intensivsykepleier`, `Håndverker`
-→ `Elektriker`, `Undervisning og pedagogikk` → `Lærer barneskole`. A parent
-matches everything under it, so `["Helsepersonell"]` is broader than
-`["Sykepleier"]`. Call `list_filter_options` with `filter: "occupation"` for the
-live tree with ad counts, and `contains` to narrow it — the taxonomy is read
-from FINN at request time, so the list above is a snapshot and the tool is the
-source of truth.
-
-`area` takes any county, municipality or Oslo district by name (`"Oslo"`,
-`"Trøndelag"`, `"Bærum"`, `"Grünerløkka"`). Repeated areas or roles are OR-ed.
+`role` and `area` take names, not FINN's numeric codes. `role` is FINN's
+*Stilling* filter — 83 top-level occupations covering every trade and
+profession on FINN, most of them with children. A parent matches everything
+under it, so `["Helsepersonell"]` is broader than `["Sykepleier"]`. `area`
+takes any county, municipality or Oslo district. Repeated values are OR-ed.
 
 ```jsonc
 // Nurses in Bergen, permanent positions
 { "role": ["Sykepleier"], "area": ["Bergen"], "employment_type": ["permanent"] }
 
-// Teaching jobs in Trøndelag, newest first
-{ "role": ["Undervisning og pedagogikk"], "area": ["Trøndelag"], "sort": "published" }
+// Senior backend/full-stack around Oslo, hybrid, English-speaking
+{ "role": ["Backend-utvikler", "Full stack utvikler"], "area": ["Oslo", "Bærum"],
+  "experience": ["experienced"], "remote": "hybrid", "language": "english" }
 
 // Anything at all in Tromsø with a deadline this week
 { "area": ["Tromsø"], "deadline_within_days": 7, "sort": "deadline" }
 ```
 
-Leave `role` out entirely and the search covers all 27 000 adverts; `query` alone
-works too, for occupations the taxonomy splits differently than you would.
+Omit `role` and the search covers every advert on FINN; `query` alone works
+too, for occupations the taxonomy splits differently than you would.
 
-### Software development
-
-`"IT utvikling"` is the umbrella; under it sit `AI / Maskinlæring` ·
-`App utvikler` · `Backend-utvikler` · `Cloud-utvikler` · `Data Scientist` ·
-`Dataarktitekt` · `Database` · `Dataingeniør` · `Embedded-utvikler` ·
-`Etisk hacker` · `Front-end` · `Full stack utvikler` · `IT-sikkerhet` ·
-`Løsningsarkitekt` · `MLOps-ingeniør` · `QA/Testing` · `Sikkerhetsanalytiker` ·
-`Systemarkitekt` · `Tech Lead` · `Utvikler (generell)`. Related work sits
-elsewhere in the tree: `IT drift og vedlikehold`, `Brukerstøtte/support`,
-`Design` → `UX-design`, `Ingeniør` → `Kybernetikk`.
-
-```jsonc
-// All software development around Trondheim, newest first
-{ "role": ["IT utvikling"], "area": ["Trondheim"], "sort": "published" }
-
-// Senior backend/full-stack in Oslo, hybrid, English-speaking
-{ "role": ["Backend-utvikler", "Full stack utvikler"],
-  "area": ["Oslo", "Bærum"], "experience": ["experienced"],
-  "remote": "hybrid", "language": "english" }
-```
-
-English aliases work for the small closed filters — `extent`, `remote`,
-`sector`, `employment_type`, `experience`, `language` (see `ALIASES` in
-`src/jobs/config.ts`). Norwegian display names work too, and matching ignores
-case and accents, so `"backend utvikler"` finds `Backend-utvikler`.
+`list_filter_options` is the source of truth for which values exist — the
+taxonomy is read from FINN at request time, so no copy of it belongs here.
+Matching ignores case and accents, and the small closed filters (`extent`,
+`remote`, `sector`, `employment_type`, `experience`, `language`) also accept
+English aliases; see `ALIASES` in `src/jobs/config.ts`.
 
 ## How it works
 
