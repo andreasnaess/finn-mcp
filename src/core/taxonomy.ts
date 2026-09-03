@@ -126,7 +126,11 @@ export function createTaxonomy<F extends string>(
   async function load(): Promise<Map<string, FilterGroup>> {
     const res = await search<unknown>(
       marketplace,
-      new URLSearchParams({ rows: "1" }),
+      // rows=0, not rows=1: the filter tree is byte-identical either way, and
+      // `rows=1` is a URL a bare search_jobs({ limit: 1 }) also produces. That
+      // would share this request's cache entry and be served an hour-old
+      // result. `limit` has a minimum of 1, so rows=0 is ours alone.
+      new URLSearchParams({ rows: "0" }),
       TAXONOMY_TTL_MS / 1000,
     );
     const groups = new Map<string, FilterGroup>();
