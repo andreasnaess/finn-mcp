@@ -4,3 +4,14 @@ compatibility_date = "2026-09-03"
 
 # No nodejs_compat: src/ imports no node: builtins, and the MCP SDK ships a
 # workerd build that swaps in a Workers-safe JSON Schema validator.
+
+# Rate limiting runs in the Worker: WAF rate-limiting rules are zone-scoped,
+# and workers.dev is not a zone we control. 30 requests/minute per IP is far
+# above what a real Claude session does and still caps a scraper.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60

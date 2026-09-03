@@ -39,13 +39,18 @@ Then add the deployed URL in Claude under Settings → Connectors → Add custom
 connector.
 
 It deploys **authless**: every tool reads public, read-only finn.no data, so
-there is no credential to check and nothing user-specific to protect. That does
-leave the endpoint open to anyone who has the URL, and the traffic reaches
-finn.no under this project's `User-Agent` — so put a Cloudflare
-[rate-limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/)
-in front of the Worker. Claude's other option here is full OAuth; a fixed bearer
-token is not one, as Claude only accepts static credentials via `static_headers`,
-which is beta and entered by an organization administrator.
+there is no credential to check and nothing user-specific to protect. Claude's
+other option here is full OAuth; a fixed bearer token is not one, as Claude
+only accepts static credentials via `static_headers`, which is beta and entered
+by an organization administrator.
+
+Authless does leave the endpoint open to anyone who has the URL, and that
+traffic reaches finn.no under this project's `User-Agent`, so the Worker rate
+limits itself — 30 requests/minute per IP, configured in `wrangler.toml`. It
+does this with a
+[rate-limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
+rather than a WAF rate-limiting rule, because WAF rules are scoped to a zone
+and `workers.dev` is not one.
 
 It fits the Workers free plan comfortably: the work is I/O-bound (one or two
 `fetch`es per call, against a 50-subrequest limit), the parsing costs on the
