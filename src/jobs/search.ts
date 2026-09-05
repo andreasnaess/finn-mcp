@@ -122,16 +122,43 @@ export async function runSearch(args: SearchArgs): Promise<{
   return { response: await search<JobDoc>(JOBS, params), params };
 }
 
-const fmtDate = (ms?: number): string | undefined =>
-  ms == null ? undefined : new Date(ms).toISOString().slice(0, 10);
+/**
+ * The calendar date an instant falls on *in Norway*, as `YYYY-MM-DD`.
+ *
+ * Every date on an ad is a Norwegian calendar date — the day it was published
+ * there, the day applications close there — so neither UTC nor whatever zone
+ * happens to be running this process is the right basis. `en-CA` formats as
+ * ISO, and Europe/Oslo is fixed regardless of host: the stdio server runs in
+ * the user's zone, the Worker in UTC, and both must agree.
+ */
+const osloFormat = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Oslo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
-/** Calendar days between then and now, so two ads posted on the same date
- *  never render as "today" and "1 day ago" depending on the hour. */
+const osloDate = (ms: number): string => osloFormat.format(new Date(ms));
+
+const fmtDate = (ms?: number): string | undefined =>
+  ms == null ? undefined : osloDate(ms);
+
+/**
+ * Calendar days between then and now, so two ads posted on the same date never
+ * render as "today" and "1 day ago" depending on the hour.
+ *
+ * It must count the same days `fmtDate` prints, or it breaks that promise: the
+ * two used to derive the date separately — one in UTC, one in local time — and
+ * an ad published late in the Norwegian evening printed one day's date beside
+ * the other day's label. Both go through `osloDate` now, and the difference is
+ * taken between two UTC midnights, which is an exact multiple of a day.
+ */
 function daysAgo(ms?: number): string | undefined {
   if (ms == null) return undefined;
-  const midnight = (d: Date): number =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((midnight(new Date()) - midnight(new Date(ms))) / 86_400_000);
+  const midnight = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
+  const days = Math.round(
+    (midnight(osloDate(Date.now())) - midnight(osloDate(ms))) / 86_400_000,
+  );
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return `${days} days ago`;
