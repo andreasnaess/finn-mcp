@@ -128,6 +128,8 @@ export interface Taxonomy<F extends string> {
   /** The alias table this taxonomy was built with, for tool descriptions. */
   aliases: Aliases;
   optionsFor(filter: F): Promise<ResolvedOption[]>;
+  /** Options already in memory, or `[]`. Never fetches. See `cachedOptionsFor`. */
+  cachedOptionsFor(filter: F): ResolvedOption[];
   resolveOption(filter: F, input: string): Promise<ResolvedOption>;
   resolveWithAliases(filter: F, input: string): Promise<ResolvedOption>;
   resolveAll(filter: F, inputs: string[] | undefined): Promise<ResolvedOption[]>;
@@ -182,6 +184,20 @@ export function createTaxonomy<F extends string>(
   async function optionsFor(filter: F): Promise<ResolvedOption[]> {
     const groups = await getTaxonomy();
     return flatten(groups.get(filter));
+  }
+
+  /**
+   * What this isolate already knows, without asking finn.no.
+   *
+   * For callers that would like the taxonomy but must not pay a request for
+   * it. On Cloudflare that is the difference between a working connector and a
+   * broken one: workers.dev has no edge cache, so "fetch if missing" means one
+   * request to finn.no per cold isolate, and finn.no answers that volume from
+   * Cloudflare's range with a 403.
+   */
+  function cachedOptionsFor(filter: F): ResolvedOption[] {
+    if (!cache || Date.now() - cache.at >= TAXONOMY_TTL_MS) return [];
+    return flatten(cache.groups.get(filter));
   }
 
   /**
@@ -261,6 +277,7 @@ export function createTaxonomy<F extends string>(
   return {
     aliases,
     optionsFor,
+    cachedOptionsFor,
     resolveOption,
     resolveWithAliases,
     resolveAll,

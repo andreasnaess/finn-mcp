@@ -66,8 +66,14 @@ export interface Vocabulary {
  * node, so `location` at depth 0 is "Norge" and "Utlandet" and the useful
  * level is 1. Every other filter here is useful at its root.
  */
-const namesAtDepth = async (filter: FilterName, depth = 0): Promise<string[]> => {
-  const options = await taxonomy.optionsFor(filter);
+const namesAtDepth = async (
+  filter: FilterName,
+  depth: number,
+  mayFetch: boolean,
+): Promise<string[]> => {
+  const options = mayFetch
+    ? await taxonomy.optionsFor(filter)
+    : taxonomy.cachedOptionsFor(filter);
   return options.filter((o) => o.path.length === depth).map((o) => o.name);
 };
 
@@ -85,13 +91,13 @@ const namesAtDepth = async (filter: FilterName, depth = 0): Promise<string[]> =>
  * then names no values and tells the model to look them up, which is exactly
  * what it should do when nothing is known.
  */
-export async function loadVocabulary(): Promise<Vocabulary> {
+export async function loadVocabulary(mayFetch: boolean): Promise<Vocabulary> {
   try {
     return {
-      occupation: await namesAtDepth("occupation"),
-      location: await namesAtDepth("location", 1),
-      industry: await namesAtDepth("industry"),
-      education: await namesAtDepth("education"),
+      occupation: await namesAtDepth("occupation", 0, mayFetch),
+      location: await namesAtDepth("location", 1, mayFetch),
+      industry: await namesAtDepth("industry", 0, mayFetch),
+      education: await namesAtDepth("education", 0, mayFetch),
     };
   } catch (err) {
     console.error(`[finn] tool description falling back to no listed values: ${String(err)}`);
@@ -347,6 +353,26 @@ function registerListFilterOptions(server: McpServer): void {
 }
 
 /**
+ * How much a server may spend on its own tool descriptions.
+ *
+ * The two transports can afford very different things. A stdio server is one
+ * process per session, egressing from the user's own connection, so fetching
+ * the taxonomy to name FINN's filter values costs one request per session and
+ * finn.no treats it like any browser.
+ *
+ * A Worker is a new isolate at unpredictable moments, egressing from
+ * Cloudflare — a range finn.no rate-limits with 403s — and on a workers.dev
+ * subdomain there is no edge cache to absorb the repeats (the Cache API needs
+ * a zone; `cf-cache-status` is BYPASS on every subrequest). Fetching there to
+ * fill in a description turns every new isolate into a refused request, so the
+ * Worker passes `false` and describes only what a search has already loaded.
+ */
+export interface ServerOptions {
+  /** May registering tools fetch the taxonomy? Default true; the Worker says no. */
+  mayFetchToDescribe?: boolean;
+}
+
+/**
  * A fresh server with all three tools registered. Both entry points call this;
  * the HTTP entry calls it once per request, so it must not share state.
  *
@@ -355,9 +381,9 @@ function registerListFilterOptions(server: McpServer): void {
  * afterwards: the taxonomy is cached for an hour, and the search that follows
  * would have loaded it anyway.
  */
-export async function createServer(): Promise<McpServer> {
+export async function createServer(options: ServerOptions = {}): Promise<McpServer> {
   const server = new McpServer({ name: "finn-jobs-mcp", version: "0.1.0" });
-  registerSearchJobs(server, await loadVocabulary());
+  registerSearchJobs(server, await loadVocabulary(options.mayFetchToDescribe ?? true));
   registerGetJob(server);
   registerListFilterOptions(server);
   return server;

@@ -16,7 +16,11 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 
 import { createServer } from "./server.js";
 
-const handler = createMcpHandler(() => createServer());
+// `mayFetchToDescribe: false`: never spend a finn.no request just to fill in a
+// tool description. See `ServerOptions` in server.ts — on workers.dev there is
+// no edge cache, so that request is paid again by every cold isolate, and
+// finn.no answers Cloudflare's range with 403s when it sees that volume.
+const handler = createMcpHandler(() => createServer({ mayFetchToDescribe: false }));
 
 interface Env {
   RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };

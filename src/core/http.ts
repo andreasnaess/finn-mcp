@@ -92,9 +92,18 @@ async function attempt(
       },
       signal: controller.signal,
       redirect: "follow",
-      // Ignored off-Workers. On Workers this shares one response across every
-      // isolate in the colo, so finn.no sees one request an hour instead of
-      // one per cold isolate — which is what its sporadic 403s punish.
+      // Ignored off-Workers, and — measured, not assumed — ignored on
+      // workers.dev too: `cf-cache-status` comes back BYPASS on every
+      // subrequest, because a functional Cache API needs a zone and a
+      // workers.dev subdomain is not one. The same gap that keeps WAF rules
+      // out (see wrangler.toml) keeps the cache out.
+      //
+      // So this buys nothing today and every cold isolate reaches finn.no
+      // directly. It is kept because it starts working the moment the Worker
+      // moves to a custom domain, which is the fix for the 403s rather than a
+      // workaround for them. Until then, callers must assume no sharing: see
+      // `mayFetchToDescribe` in jobs/server.ts, which is why tool descriptions
+      // no longer pay a request per isolate.
       //
       // Per status, never a flat cacheTtl: that cached finn.no's sporadic 403
       // too, and then served it from cache — instantly, for the full hour, to
