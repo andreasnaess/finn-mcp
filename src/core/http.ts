@@ -62,22 +62,24 @@ const RETRY_DELAYS_MS = [500, 1500];
 async function request(
   url: string,
   accept: string,
+  referer: string,
   cacheTtlSeconds?: number,
 ): Promise<Response> {
   for (const delay of RETRY_DELAYS_MS) {
     try {
-      return await attempt(url, accept, cacheTtlSeconds);
+      return await attempt(url, accept, referer, cacheTtlSeconds);
     } catch (err) {
       if (!(err instanceof FinnError) || !RETRY_STATUSES.has(err.status ?? 0)) throw err;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  return attempt(url, accept, cacheTtlSeconds);
+  return attempt(url, accept, referer, cacheTtlSeconds);
 }
 
 async function attempt(
   url: string,
   accept: string,
+  referer: string,
   cacheTtlSeconds?: number,
 ): Promise<Response> {
   const controller = new AbortController();
@@ -89,6 +91,12 @@ async function attempt(
         "User-Agent": USER_AGENT,
         Accept: accept,
         "Accept-Language": "nb-NO,nb;q=0.9,en;q=0.8",
+        // This endpoint exists to be called from the marketplace's own search
+        // page, and a browser calling it always says so. Omitting the header
+        // made every request look like it came from nowhere. It is not a
+        // disguise — the User-Agent above still says exactly who this is — it
+        // is the true origin of the call, which we were simply not sending.
+        Referer: referer,
       },
       signal: controller.signal,
       redirect: "follow",
@@ -190,13 +198,14 @@ export async function search<Doc>(
 ): Promise<SearchResponse<Doc>> {
   const { apiBase, searchKey } = marketplace;
   const url = `${apiBase}/unified-search/${searchKey}?${params.toString()}`;
-  const res = await request(url, "application/json", cacheTtlSeconds);
+  const res = await request(url, "application/json", `${SITE}${marketplace.searchPath}`, cacheTtlSeconds);
   return (await res.json()) as SearchResponse<Doc>;
 }
 
-/** Fetch the HTML of a single page on finn.no. */
-export async function fetchHtml(url: string): Promise<string> {
-  const res = await request(url, "text/html");
+/** Fetch the HTML of a single page on finn.no. Adverts are reached from a
+ *  search, so that is the referer a browser would carry here too. */
+export async function fetchHtml(url: string, referer: string): Promise<string> {
+  const res = await request(url, "text/html", referer);
   return await res.text();
 }
 

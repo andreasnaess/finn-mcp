@@ -11,7 +11,7 @@
  */
 
 import { fetchHtml, SITE } from "../core/http.js";
-import { adUrl } from "./config.js";
+import { JOBS, adUrl } from "./config.js";
 
 export interface JobAd {
   id: string;
@@ -299,7 +299,7 @@ export function parseAd(id: string, html: string): JobAd {
 }
 
 export async function getAd(id: string): Promise<JobAd> {
-  return parseAd(id, await fetchHtml(adUrl(id)));
+  return parseAd(id, await fetchHtml(adUrl(id), `${SITE}${JOBS.searchPath}`));
 }
 
 /** Accept an ad id, a finnkode, or a full finn.no URL. */

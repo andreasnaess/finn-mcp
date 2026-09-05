@@ -146,12 +146,17 @@ export function createTaxonomy<F extends string>(
   async function load(): Promise<Map<string, FilterGroup>> {
     const res = await search<unknown>(
       marketplace,
-      // rows=0, not rows=1: the filter tree is byte-identical either way, and
-      // `rows=1` is a URL a bare search_jobs({ limit: 1 }) also produces. That
-      // would share this request's cache entry, and be served a day-old result
-      // — this entry is cached far longer than a search should be. `limit` has
-      // a minimum of 1, so rows=0 is ours alone.
-      new URLSearchParams({ rows: "0" }),
+      // `page=1` is what keeps this URL ours alone, not `rows`. A search only
+      // ever emits `page` when it is above 1 (see `buildQuery`), so no search
+      // can produce this URL and share its cache entry — which matters because
+      // this entry is deliberately cached far longer than a search should be.
+      //
+      // It used to be `rows=0` for the same reason, and that was a worse
+      // choice: no browser ever asks a search endpoint for zero results, and
+      // an unexplained request from a datacenter IP is scored on exactly that
+      // kind of tell. `rows=1` returns a byte-identical filter tree (verified:
+      // same sha256 over `filters`, 17 groups) and looks like a page load.
+      new URLSearchParams({ rows: "1", page: "1" }),
       TAXONOMY_EDGE_TTL_S,
     );
     const groups = new Map<string, FilterGroup>();
