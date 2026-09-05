@@ -121,10 +121,13 @@ function registerSearchJobs(server: McpServer, vocab: Vocabulary): void {
         vocabLine("Utdanning", "education", vocab.education) +
         "\n\nOccupations and areas have children that are not listed above — " +
         "specialities, municipalities, Oslo districts — and a parent value " +
-        "matches everything under it. Omit `role` to search all adverts. For a " +
-        "child value, or any value not listed above, call list_filter_options " +
-        "(with `contains` to narrow) rather than guessing: a value FINN does " +
-        "not know is rejected, and a wrong-but-real code returns nothing.",
+        "matches everything under it. Omit `role` to search all adverts.\n\n" +
+        "Pass a child by name directly: every name is resolved against FINN's " +
+        "live taxonomy, and a name it does not know comes back as an error " +
+        "naming the closest match FINN does have, never as an empty result. Use list_filter_options to browse what exists under a filter, " +
+        "or when a name might be ambiguous. Never pass a raw code — those are " +
+        "resolved here, and a wrong-but-real code is the one input that returns " +
+        "nothing without saying why.",
       inputSchema: z.object({
             query: z
               .string()
