@@ -42,6 +42,24 @@ export type Aliases = Record<string, Record<string, string>>;
 
 const TAXONOMY_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * How long Cloudflare's cache keeps the filter tree, as opposed to how long an
+ * isolate trusts its own copy (`TAXONOMY_TTL_MS`, above).
+ *
+ * These answer different questions and should not share a number. The memory
+ * TTL is about freshness: an hour is comfortably shorter than the roughly
+ * yearly pace at which FINN renumbers anything. The edge TTL is about
+ * availability: it decides how often a cold isolate has to ask finn.no at all,
+ * and finn.no serves Cloudflare's egress a sporadic 403 (see `RETRY_STATUSES`
+ * in http.ts). Matching them meant 24 chances a day to catch a refusal with an
+ * empty memory cache and nothing to fall back to — which is a failed tool call.
+ *
+ * A day of edge cache costs nothing real, because a filter tree that is hours
+ * old is indistinguishable from a fresh one, and it turns those 24 exposures
+ * into one.
+ */
+const TAXONOMY_EDGE_TTL_S = 24 * 60 * 60; // 1 day
+
 /** Flatten a filter group into a list of options, keeping ancestry. */
 export function flatten(group: FilterGroup | undefined): ResolvedOption[] {
   const out: ResolvedOption[] = [];
@@ -128,10 +146,11 @@ export function createTaxonomy<F extends string>(
       marketplace,
       // rows=0, not rows=1: the filter tree is byte-identical either way, and
       // `rows=1` is a URL a bare search_jobs({ limit: 1 }) also produces. That
-      // would share this request's cache entry and be served an hour-old
-      // result. `limit` has a minimum of 1, so rows=0 is ours alone.
+      // would share this request's cache entry, and be served a day-old result
+      // — this entry is cached far longer than a search should be. `limit` has
+      // a minimum of 1, so rows=0 is ours alone.
       new URLSearchParams({ rows: "0" }),
-      TAXONOMY_TTL_MS / 1000,
+      TAXONOMY_EDGE_TTL_S,
     );
     const groups = new Map<string, FilterGroup>();
     for (const group of res.filters ?? []) {
