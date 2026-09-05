@@ -9,7 +9,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createServer } from "./server.js";
 
 async function main(): Promise<void> {
-  await createServer().connect(new StdioServerTransport());
+  const server = await createServer();
+  await server.connect(new StdioServerTransport());
 }
 
 main().catch((err: unknown) => {

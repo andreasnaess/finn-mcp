@@ -38,26 +38,93 @@ async function guard(fn: () => Promise<string>) {
 const aliasList = (filter: string): string =>
   Object.keys(ALIASES[filter] ?? {}).join(" | ");
 
-function registerSearchJobs(server: McpServer): void {
+/**
+ * The filter values `search_jobs` names in its own description, read from
+ * finn.no rather than written down here.
+ *
+ * A hand-picked list of examples decides which words the model recognises
+ * without a lookup, and it decays the same way a hard-coded code does: FINN
+ * renames a value and the description keeps steering by a word that is gone,
+ * silently, because nothing validates prose. So the description quotes the
+ * live taxonomy instead.
+ *
+ * Top level only. Every occupation and area has children — specialities,
+ * municipalities, Oslo districts — and those stay behind `list_filter_options`
+ * rather than turning one tool description into a full gazetteer.
+ */
+export interface Vocabulary {
+  occupation: string[];
+  location: string[];
+  industry: string[];
+  education: string[];
+}
+
+/**
+ * The display names at one depth of a filter's tree, live from FINN.
+ *
+ * `depth` is structural, not a name: FINN nests the counties under a country
+ * node, so `location` at depth 0 is "Norge" and "Utlandet" and the useful
+ * level is 1. Every other filter here is useful at its root.
+ */
+const namesAtDepth = async (filter: FilterName, depth = 0): Promise<string[]> => {
+  const options = await taxonomy.optionsFor(filter);
+  return options.filter((o) => o.path.length === depth).map((o) => o.name);
+};
+
+/**
+ * Load the vocabulary, or give back an empty one.
+ *
+ * Sequential, not `Promise.all`: all four reads share one taxonomy, and
+ * `core/taxonomy.ts` deliberately does not dedupe concurrent loads (a promise
+ * cannot be awaited across two Worker requests). Four parallel misses on a
+ * cold cache would be four identical fetches; four awaits are one fetch and
+ * three memory reads.
+ *
+ * A server that cannot reach finn.no still has to start and still has to serve
+ * `tools/list`, so failure degrades to an empty vocabulary: the description
+ * then names no values and tells the model to look them up, which is exactly
+ * what it should do when nothing is known.
+ */
+export async function loadVocabulary(): Promise<Vocabulary> {
+  try {
+    return {
+      occupation: await namesAtDepth("occupation"),
+      location: await namesAtDepth("location", 1),
+      industry: await namesAtDepth("industry"),
+      education: await namesAtDepth("education"),
+    };
+  } catch (err) {
+    console.error(`[finn] tool description falling back to no listed values: ${String(err)}`);
+    return { occupation: [], location: [], industry: [], education: [] };
+  }
+}
+
+/** One "Label (`arg`): a, b, c" line, or nothing when the load failed. */
+const vocabLine = (label: string, arg: string, values: string[]): string =>
+  values.length ? `\n\n${label} (\`${arg}\`): ${values.join(", ")}.` : "";
+
+function registerSearchJobs(server: McpServer, vocab: Vocabulary): void {
   server.registerTool(
     "search_jobs",
     {
       title: "Search FINN job ads",
       description:
-        "Search job adverts on finn.no (FINN Jobb, Norway) — every occupation " +
-        "FINN lists, from nursing, teaching, retail and trades to IT. Filters " +
-        "take human-readable names — Norwegian display names as FINN spells " +
-        "them, or the English aliases listed per argument — and are matched " +
-        "case- and accent-insensitively.\n\n" +
-        "`role` is FINN's occupation filter (over 80 top-level values, most " +
-        'with children): e.g. "Sykepleier", "Helsepersonell", ' +
-        '"Undervisning og pedagogikk", "Barnehage", "Håndverker", "Ingeniør", ' +
-        '"Butikkansatt", "Mat og servering", "Salg", "Økonomi og regnskap", ' +
-        '"Transport og sjåfør", "Ledelse", "IT utvikling". A parent value ' +
-        "matches everything under it. Omit `role` to search all adverts.\n\n" +
-        "Do not guess a value that is not listed here — call " +
-        "list_filter_options (with `contains` to narrow) to get the exact " +
-        "spelling for any role, area, industry or education level first.",
+        "Search job adverts on finn.no (FINN Jobb, Norway). Filters take " +
+        "human-readable names — Norwegian display names as FINN spells them, " +
+        "or the English aliases listed per argument — and are matched case- " +
+        "and accent-insensitively.\n\n" +
+        "The values below were read from finn.no when this server started, so " +
+        "they are the ones FINN offers today." +
+        vocabLine("Stilling", "role", vocab.occupation) +
+        vocabLine("Område, counties", "area", vocab.location) +
+        vocabLine("Bransje", "industry", vocab.industry) +
+        vocabLine("Utdanning", "education", vocab.education) +
+        "\n\nOccupations and areas have children that are not listed above — " +
+        "specialities, municipalities, Oslo districts — and a parent value " +
+        "matches everything under it. Omit `role` to search all adverts. For a " +
+        "child value, or any value not listed above, call list_filter_options " +
+        "(with `contains` to narrow) rather than guessing: a value FINN does " +
+        "not know is rejected, and a wrong-but-real code returns nothing.",
       inputSchema: z.object({
             query: z
               .string()
@@ -67,26 +134,24 @@ function registerSearchJobs(server: McpServer): void {
               .array(z.string())
               .optional()
               .describe(
-                "Locations by name: a county ('Vestland'), a municipality ('Bergen', " +
-                  "'Trondheim', 'Bærum'), or an Oslo district ('Grünerløkka'). " +
-                  "Multiple areas are OR-ed together.",
+                "Locations by name: a county, a municipality or an Oslo district. " +
+                  "The counties are listed in this tool's description; call " +
+                  "list_filter_options for municipalities and districts. Multiple " +
+                  "areas are OR-ed together.",
               ),
             role: z
               .array(z.string())
               .optional()
               .describe(
-                "Occupation (FINN's 'Stilling' filter), e.g. 'Sykepleier', " +
-                  "'Undervisning og pedagogikk', 'Håndverker' or 'IT utvikling'. " +
-                  "A parent value includes its children. Multiple roles are OR-ed " +
-                  "together. Omit to search every occupation.",
+                "Occupation (FINN's 'Stilling' filter). The top-level values are " +
+                  "listed in this tool's description; a parent value includes its " +
+                  "children. Multiple roles are OR-ed together. Omit to search " +
+                  "every occupation.",
               ),
             industry: z
               .array(z.string())
               .optional()
-              .describe(
-                "Industry (FINN's 'Bransje'), e.g. 'Helse og omsorg', " +
-                  "'Undervisning', 'Bygg og anlegg', 'IT - programvare'.",
-              ),
+              .describe("Industry (FINN's 'Bransje'). The values are listed in this tool's description."),
             extent: z.string().optional().describe(`Working hours: ${aliasList("extent")}`),
             remote: z
               .string()
@@ -104,10 +169,7 @@ function registerSearchJobs(server: McpServer): void {
             education: z
               .array(z.string())
               .optional()
-              .describe(
-                "Required education, e.g. 'Fagskole/fagbrev', " +
-                  "'Høyskole/universitet, høyere nivå'.",
-              ),
+              .describe("Required education. The values are listed in this tool's description."),
             language: z
               .string()
               .optional()
@@ -284,10 +346,15 @@ function registerListFilterOptions(server: McpServer): void {
 /**
  * A fresh server with all three tools registered. Both entry points call this;
  * the HTTP entry calls it once per request, so it must not share state.
+ *
+ * Async because `search_jobs`'s description quotes FINN's live filter values.
+ * That costs one request the first time a process registers tools, and nothing
+ * afterwards: the taxonomy is cached for an hour, and the search that follows
+ * would have loaded it anyway.
  */
-export function createServer(): McpServer {
+export async function createServer(): Promise<McpServer> {
   const server = new McpServer({ name: "finn-jobs-mcp", version: "0.1.0" });
-  registerSearchJobs(server);
+  registerSearchJobs(server, await loadVocabulary());
   registerGetJob(server);
   registerListFilterOptions(server);
   return server;
